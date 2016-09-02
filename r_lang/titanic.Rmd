@@ -1,0 +1,181 @@
+---
+title: "Analyzing, visualizing, modeling Kaggle Titanic Dataset in R"
+output: html_document
+---
+
+
+ **VARIABLE DESCRIPTIONS: **
+
+
+survival        :Survival
+
+                (0 = No; 1 = Yes)
+                
+pclass          :Passenger Class
+
+                (1 = 1st; 2 = 2nd; 3 = 3rd)
+                
+name            :Name
+
+sex             :Sex
+
+age             :Age
+
+sibsp           :Number of Siblings/Spouses Aboard
+
+parch           :Number of Parents/Children Aboard
+
+ticket          :Ticket Number
+
+fare            :Passenger Fare
+
+cabin           :Cabin
+
+embarked        :Port of Embarkation
+
+                (C = Cherbourg; Q = Queenstown; S = Southampton)
+                
+
+ **SPECIAL NOTES: **
+Pclass is a proxy for socio-economic status (SES)
+
+ 1st ~ Upper; 2nd ~ Middle; 3rd ~ Lower
+
+Age is in Years; Fractional if Age less than One (1)
+
+ If the Age is Estimated, it is in the form xx.5
+
+With respect to the family relation variables (i.e. sibsp and parch)
+some relations were ignored.  The following are the definitions used
+for sibsp and parch.
+
+Sibling:  Brother, Sister, Stepbrother, or Stepsister of Passenger Aboard Titanic
+
+Spouse:   Husband or Wife of Passenger Aboard Titanic (Mistresses and Fiances
+Ignored)
+
+Parent:   Mother or Father of Passenger Aboard Titanic
+
+Child:    Son, Daughter, Stepson, or Stepdaughter of Passenger Aboard Titanic
+
+
+Other family relatives excluded from this study include cousins,
+nephews/nieces, aunts/uncles, and in-laws.  Some children travelled
+only with a nanny, therefore parch=0 for them.  As well, some
+travelled with very close friends or neighbors in a village, however,
+the definitions do not support such relations.
+
+ **Getting Data  **
+
+```{r,message=FALSE,warning=FALSE}
+library(party)
+library(randomForest)
+library(rattle)
+library(rpart)
+library(caret)
+library(dplyr)
+library(lattice)
+library(Hmisc)
+setwd("C:/Onur_Data/Folder/DATA SCIENCE/titanic")
+
+test<-read.csv("test.csv",header = TRUE,na.strings = c("NA",""))
+train<-read.csv("train.csv",header = TRUE,na.strings = c("NA",""))
+genderclassmodel<-read.csv("genderclassmodel.csv",header = TRUE,na.strings = c("NA",""))
+gendermodel<-read.csv("gendermodel.csv",header = TRUE,na.strings = c("NA",""))
+alldata<- bind_rows(train,test)
+
+```
+
+
+ **Finding NA Amounts with Loop Functions **
+
+
+```{r}
+c<-data.frame(V1=character(), 
+                     V2=character(),
+                     V3=character(),
+                     stringsAsFactors=FALSE)
+for(i in 1:length(names(train))){
+    c[i,2]<-sum(is.na(train[,i]))}
+for(i in 1:length(names(alldata))){
+    c[i,3]<-sum(is.na(alldata[,i]))}
+
+c$V1<-names(train)
+names(c)<-c("feature","Train NA-Counts","ALL NA-Counts")
+c
+
+
+
+```
+
+ **Dealing with NAs **
+
+
+
+```{r}
+
+meanage<-mean(alldata$Age,na.rm = TRUE)
+meanage
+
+train[is.na(train$Age),6]<-meanage
+train$farecut<-cut2(train$Fare,c(125,250,375))
+test$farecut<-cut2(test$Fare,c(125,250,375))
+which(is.na(train$Embarked))
+train[c(62,830),12]<-"S"
+```
+
+
+ **Visualizing **  
+ 
+```{r}
+histogram( ~Survived,train,breaks=seq(from=-.5,to=1.5,by=1),xlim = c(-.5,1.5))
+histogram( ~Survived|factor(Sex),train,breaks=seq(from=-.5,to=1.5,by=1),xlim = c(-.5,1.5))
+histogram( ~Pclass|factor(Sex)+factor(Survived),train)
+histogram( ~Age|factor(Sex)+factor(Survived),train)
+histogram( ~SibSp|factor(Sex)+factor(Survived),train)
+histogram( ~Parch|factor(Sex)+factor(Survived),train)
+histogram( ~Fare|factor(Sex)+factor(Survived),train)
+histogram( ~Embarked|factor(Sex)+factor(Survived),train)
+histogram( ~Embarked|factor(farecut)+factor(Survived),train)
+histogram( ~Embarked|factor(Pclass)+factor(Survived),train)
+```
+
+
+**Modelling**
+
+*Principal component analysis*
+```{r}
+pairs(train[,c(3,6,7,8,10)])
+pca<-princomp(train[,c(3,6,7,8,10)],cor = TRUE,scores = TRUE)
+plot(pca)
+biplot(pca)
+pca$loadings
+head(pca$scores)
+pca <- preProcess(train[,c(3,6,7,8,10)], 
+                   method=c( "center", 
+                     "scale", "pca"))
+pc<- predict(pca, train[,c(3,6,7,8,10)])
+print(pca)
+summary(pca)
+plot(pc)
+
+```
+
+*Decision Tree*
+```{r}
+fit<-rpart(Survived~Pclass+Sex+Age+SibSp+Parch+farecut+Embarked,data = train)
+fancyRpartPlot(fit)
+pred<-round(predict(fit,test))
+confusionMatrix(pred,genderclassmodel$Survived)
+```
+
+*Random Forest*
+```{r}
+set.seed(313)
+fitrf<-randomForest(as.factor(Survived)~Pclass+Sex+Age+SibSp+Parch+Fare,data = train,ntree=2000,importance=TRUE)
+print(fitrf) 
+print(importance(fitrf,type = 2)) 
+pred2<-predict(fitrf,test)
+confusionMatrix(pred2,genderclassmodel$Survived)
+varImpPlot(fitrf)
+```
