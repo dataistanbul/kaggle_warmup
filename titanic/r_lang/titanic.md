@@ -68,7 +68,7 @@ the definitions do not support such relations.
  **Getting Data  **
 
 
-```r
+
 library(party)
 library(randomForest)
 library(rattle)
